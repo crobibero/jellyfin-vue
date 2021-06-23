@@ -19,6 +19,10 @@
         :width="$vuetify.breakpoint.mobile ? '60vw' : '25vw'"
         :value="isPlaying"
       >
+        <playback-info-card
+          v-show="!isMinimized && playbackData"
+          @close-playback-data="playbackData = false"
+        />
         <v-hover v-slot="{ hover }">
           <v-card class="player-card" width="100%">
             <v-container fill-height fluid class="pa-0 justify-center">
@@ -195,16 +199,17 @@
                           <queue-button
                             :nudge-top="$vuetify.breakpoint.mdAndUp ? 60 : 30"
                             :close-on-click="true"
-                            @input="onQueueChangeHandler($event)"
+                            @input="onMenuOpen($event)"
                           />
                           <subtitle-selection-button
                             v-if="$vuetify.breakpoint.smAndUp"
                             :nudge-top="$vuetify.breakpoint.mdAndUp ? 60 : 30"
-                            @input="onQueueChangeHandler($event)"
+                            @input="onMenuOpen($event)"
                           />
                           <playback-settings-button
                             :nudge-top="$vuetify.breakpoint.mdAndUp ? 60 : 30"
-                            @input="onQueueChangeHandler($event)"
+                            @input="onMenuOpen($event)"
+                            @open-playback-data="playbackData = true"
                           />
                           <v-btn
                             v-if="$features.pictureInPicture"
@@ -254,7 +259,8 @@ export default Vue.extend({
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       unsubscribe(): void {},
       fullScreenVideo: false,
-      keepOpen: false
+      keepOpen: false,
+      playbackData: false
     };
   },
   computed: {
@@ -578,7 +584,7 @@ export default Vue.extend({
         }
       });
     },
-    onQueueChangeHandler(value: boolean): void {
+    onMenuOpen(value: boolean): void {
       this.keepOpen = value;
 
       if (value && this.fullScreenOverlayTimer) {
@@ -619,6 +625,11 @@ export default Vue.extend({
 </style>
 
 <style lang="scss" scoped>
+.playback-data-dialog {
+  position: absolute;
+  z-index: 999;
+}
+
 .v-card.player-card {
   background-color: black !important;
 }

@@ -4,6 +4,7 @@
     ref="shakaPlayer"
     :poster="poster.url"
     autoplay
+    crossorigin="anonymous"
     :playsinline="$browser.isMobile() && $browser.isApple()"
     @timeupdate="onProgressThrottled"
     @pause="onPause"
@@ -28,6 +29,7 @@ declare global {
   interface Window {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     muxjs: any;
+    player: any;
   }
 }
 
@@ -40,7 +42,10 @@ export default Vue.extend({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       player: null as any,
       // eslint-disable-next-line @typescript-eslint/no-empty-function
-      unsubscribe(): void {}
+      unsubscribe(): void {},
+      audioContext: null as AudioContext | null,
+      audioSource: null as MediaElementAudioSourceNode | null,
+      gainNode: null as GainNode | null
     };
   },
   computed: {
@@ -51,7 +56,11 @@ export default Vue.extend({
     ...mapState('playbackManager', [
       'lastProgressUpdate',
       'currentTime',
-      'currentVolume'
+      'currentVolume',
+      'currentMediaSource',
+      'currentVideoStreamIndex',
+      'currentAudioStreamIndex',
+      'currentSubtitleStreamIndex'
     ]),
     ...mapState('deviceProfile', ['deviceId']),
     ...mapState('user', ['accessToken']),
@@ -101,7 +110,20 @@ export default Vue.extend({
       shaka.polyfill.installAll();
 
       if (shaka.Player.isBrowserSupported()) {
-        this.player = new shaka.Player(this.$refs.shakaPlayer);
+        // We use a global for ease of debugging and to fetch data from the playback information popup
+        window.player = new shaka.Player(this.$refs.shakaPlayer);
+        this.player = window.player;
+
+        // Create WebAudio context and nodes for added processing
+        this.audioContext = new AudioContext();
+        this.audioSource = this.audioContext.createMediaElementSource(
+          this.$refs.shakaPlayer as HTMLMediaElement
+        );
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.value = 1;
+        this.audioSource.connect(this.gainNode);
+
+        this.gainNode.connect(this.audioContext.destination);
 
         // Register player events
         this.player.addEventListener('error', this.onPlayerError);
@@ -133,9 +155,8 @@ export default Vue.extend({
                 break;
 
               case 'playbackManager/SET_VOLUME':
-                if (this.$refs.shakaPlayer) {
-                  (this.$refs.shakaPlayer as HTMLAudioElement).volume =
-                    this.currentVolume / 100;
+                if (this.$refs.shakaPlayer && this.gainNode) {
+                  this.gainNode.gain.value = this.currentVolume / 100;
                 }
 
                 break;
@@ -166,10 +187,15 @@ export default Vue.extend({
   beforeDestroy() {
     if (this.player) {
       window.muxjs = undefined;
+      window.player = undefined;
       this.onStopped(); // Report that the playback is stopping
       this.player.removeEventListener('error', this.onPlayerError);
       this.player.unload();
       this.player.destroy();
+
+      if (this.audioContext) {
+        this.audioContext.close();
+      }
     }
 
     this.unsubscribe();
@@ -192,7 +218,13 @@ export default Vue.extend({
             {
               itemId: this.getCurrentItem?.Id || '',
               userId: this.$auth.user?.Id,
-              playbackInfoDto: { DeviceProfile: this.$playbackProfile }
+              autoOpenLiveStream: true,
+              playbackInfoDto: { DeviceProfile: this.$playbackProfile },
+              mediaSourceId: this.currentMediaSource?.Id
+                ? this.currentMediaSource.Id
+                : undefined,
+              audioStreamIndex: this.currentAudioStreamIndex,
+              subtitleStreamIndex: this.currentSubtitleStreamIndex
             },
             { progress: false }
           )
